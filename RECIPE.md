@@ -58,13 +58,13 @@ with Enter jumping straight to that pane, also in another tab or space.
   `node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test label.test.mjs` (pane-rename) and
   `... --test names.test.mjs` (picker-named).
 - Hook-up, outside the mods:
-  - `keys.json`: `cmd-k` → `mod.open:picker-named`, `cmd-f2` → `mod.open:pane-rename`.
+  - `keys.json`: `cmd-p` (Herdr's own Go To key) → `mod.open:picker-named`, `cmd-f2` → `mod.open:pane-rename`.
   - Each layout that should show names in pane headers: in its tab block (`"content": { "tab": "active", ... }`)
     set `pane.header.content.mod` to `"pane-named"`, or add
     `"header": { "content": { "mod": "pane-named" }, "height": 30, "position": "top", "reveal": "always" }`
     under `pane` if the layout has no pane header. Herdr's own layouts are read-only: `layout.clone` first and
     edit `layouts/<clone>.json`.
-  - Only `cmd-k` opens `picker-named`; the Terminals layout's space chip and `main`'s sidebar search keep
+  - Only the Go To key opens `picker-named`; the Terminals layout's space chip and `main`'s sidebar search keep
     opening Herdr's own picker.
 - Commands used: `tab.select`, `pane.focus`. Program run: `hc label`.
 
@@ -75,7 +75,8 @@ with Enter jumping straight to that pane, also in another tab or space.
 - `pane-named` and `picker-named` are clones of Herdr 0.1.15's mods and don't get Herdr's later fixes;
   compare with the shipped `pane` and `picker` after an upgrade.
 - Keys are macOS (`cmd`); on Linux and Windows pick free `ctrl-shift` keys instead. Merging `keys.json`
-  replaces whatever `cmd-k` and `cmd-f2` did before.
+  replaces Herdr's `cmd-p` → `mod.open:picker`; if the person moved Go To to another key, rebind that key
+  instead. `cmd-f2` is unbound in Herdr.
 - The label key is `pane.name`; never write `herdr.*` labels.
 - Names on remote machines' terminals are untested: `hc label` gets the `machine/t7` address as Herdr gives it.
 
@@ -84,7 +85,7 @@ with Enter jumping straight to that pane, also in another tab or space.
 1. `herdr-app check` passes for all three mods; both test files are green.
 2. `cmd-f2` on a terminal pane, type "api server", Enter: `hc get <t>` shows `pane.name: api server` and the
    pane header shows it.
-3. From another tab, `cmd-k`, type "api server": the `↳ api server` row is selected; Enter focuses that pane.
+3. From another tab, `cmd-p`, type "api server": the `↳ api server` row is selected; Enter focuses that pane.
 4. Double-click the name in the header, clear it, Save: `hc get <t>` has no `pane.name` and the header shows
    the program name again.
 5. `cmd-f2` on a Files pane: warning toast, the dialog closes at once.

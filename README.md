@@ -10,8 +10,9 @@ and find it in Go To.
 Ask the agent in your Herdr window to add `herdr.dev/mods/smartycoder/herdr-pane-names`, or by hand:
 
 1. Copy `mods/pane-rename`, `mods/pane-named` and `mods/picker-named` to `~/.config/herdr-app/mods/`.
-2. Merge `keys.json` into `~/.config/herdr-app/keys.json` (`cmd-k` Go To, `cmd-f2` rename). This replaces
-   whatever those two keys did before.
+2. Merge `keys.json` into `~/.config/herdr-app/keys.json`: `cmd-p` (Herdr's Go To key) opens `picker-named`
+   instead of Herdr's `picker`, `cmd-f2` opens rename. If you moved Go To to another key, point that key at
+   `mod.open:picker-named` instead.
 3. To show names in pane headers, point your layout's pane header at `pane-named`. Herdr's own layouts are
    read-only, so clone first (`herdr-app do layout.clone '{"name":"main","as":"my-main"}'`), then in
    `~/.config/herdr-app/layouts/my-main.json` find the block with `"tab": "active"` and set its

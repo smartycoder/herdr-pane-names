@@ -3,7 +3,7 @@
 // pane.name label on its terminal, see names.js and the pane-rename mod). Named panes are rows
 // under their tab; the filter also matches pane names and the tab's terminal titles, and is
 // trimmed (Herdr's picker is not). The selection follows its row (rowKey), not its index, since
-// live titles and statuses reorder rows. Opened by cmd-k (keys.json: mod.open:picker-named); the
+// live titles and statuses reorder rows. Opened by the Go To key (keys.json: mod.open:picker-named); the
 // Terminals layout's space chip still opens Herdr's own picker (popup, at: "top"). Spaces with
 // something that needs you come first, quiet spaces (no agent running)
 // fold into "earlier". Type to filter, ↑/↓ and Enter to go, ctrl+d to close
