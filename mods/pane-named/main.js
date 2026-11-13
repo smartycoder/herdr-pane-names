@@ -62,7 +62,8 @@ export default class Pane extends View {
     const t = theme();
     const p = this.me();
     if (!p) return div();
-    const label = p.terminal && terminals().find((x) => x.address === p.terminal)?.labels?.["pane.name"];
+    // Trimmed: a label of only spaces (set with hc label by hand or an agent) counts as no name.
+    const label = p.terminal && String(terminals().find((x) => x.address === p.terminal)?.labels?.["pane.name"] ?? "").trim();
     const name = label || ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
     const pic = icon(p.program, 14, t.dim);
     const st = p.status;
@@ -86,7 +87,7 @@ export default class Pane extends View {
         .on_mouse_down("left", (e, cx) => {
           if (e.click_count !== 2 || !p.terminal) return;
           cx.stop_propagation();
-          openOverlay({ mod: "pane-rename", kind: "dialog", width: 420, height: 200, props: { terminal: p.terminal } });
+          openOverlay({ mod: "pane-rename", kind: "dialog", width: 420, height: 200, modal: true, props: { terminal: p.terminal } });
         })
         .child(name))
       .child(div().flex_1().truncate().text_color(t.dim).child(folder(p.cwd)))

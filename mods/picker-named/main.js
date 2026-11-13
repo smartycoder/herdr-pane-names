@@ -1,8 +1,10 @@
 // Modified from Herdr's shipped `picker` mod (Herdr 0.1.15, Apache-2.0): adds pane names (pane.name label).
 // Go to a tab or a named pane (picker-named: a clone of Herdr's picker; a pane's name is the
 // pane.name label on its terminal, see names.js and the pane-rename mod). Named panes are rows
-// under their tab; the filter also matches pane names and the tab's terminal titles.
-// Drops from the Terminals layout's space chip (popup, at: "top"). Spaces with
+// under their tab; the filter also matches pane names and the tab's terminal titles, and is
+// trimmed (Herdr's picker is not). The selection follows its row (rowKey), not its index, since
+// live titles and statuses reorder rows. Opened by cmd-k (keys.json: mod.open:picker-named); the
+// Terminals layout's space chip still opens Herdr's own picker (popup, at: "top"). Spaces with
 // something that needs you come first, quiet spaces (no agent running)
 // fold into "earlier". Type to filter, ↑/↓ and Enter to go, ctrl+d to close
 // a tab, Esc to leave. Last rows: new work (a tab here, a space on this
@@ -11,7 +13,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { agents, spaces, terminals, panes, run, hc, theme, settings, props, closeOverlay, openOverlay, shared, setShared } from "herdr";
-import { tabMatch, firstPick } from "./names.js";
+import { tabMatch, firstPick, rowKey } from "./names.js";
 
 const MARK = { ansi6: "#22a99a", ansi3: "#e3814f", ansi4: "#5b8def", ansi5: "#8b7cf6", ansi2: "#3fae6a", ansi1: "#d9649a" };
 
@@ -45,13 +47,15 @@ export default class Picker extends View {
     this.input = InputState.new({ placeholder: "Go to a tab, pane, space or agent…" });
     this.input.on("change", (_e, cx) => {
       this.filter = this.input.value();
-      this.at = this.filter ? firstPick(this.rows().filter(r => r.kind !== "head")) : 0;
+      this.at = this.filter.trim() ? firstPick(this.rows().filter(r => r.kind !== "head")) : 0;
+      this.selKey = null;
       cx.notify();
     });
-    this.input.on("submit", (_e, cx) => this.go(this.rows().filter(r => r.kind !== "head")[this.at], cx));
+    this.input.on("submit", (_e, cx) => this.go(this.picked(), cx));
     this.input.focus();
     cx.timer.after(600, () => this.input.focus());
     this.at = null;
+    this.selKey = null;
     this.scroll = 0;
     this.showEarlier = false;
     this.machines = [];
@@ -69,10 +73,18 @@ export default class Picker extends View {
     closeOverlay(props().overlay);
   }
 
+  // The selected row in fresh rows: by its key while it still exists, else by index.
+  picked() {
+    const pick = this.rows().filter((r) => r.kind !== "head");
+    const i = this.selKey ? pick.findIndex((r) => rowKey(r) === this.selKey) : -1;
+    return pick[i >= 0 ? i : this.at];
+  }
+
   rows() {
-    const f = this.filter.toLowerCase();
+    const f = this.filter.trim().toLowerCase();
     const all = agents();
-    const live = terminals().filter((x) => x.state === "live");
+    const allTerminals = terminals();
+    const live = allTerminals.filter((x) => x.state === "live");
     const allPanes = panes();
     const teamOf = (addrs) => {
       let n = 0;
@@ -84,7 +96,8 @@ export default class Picker extends View {
       const ctxs = w.tabs
         .map((ctx) => {
           const mine = all.filter((a) => a.tab === ctx.id);
-          const m = tabMatch({ space: w.name, tab: ctx, programs: mine.map((a) => a.program?.name ?? ""), panes: allPanes, terminals: live, filter: f });
+          // All terminals, as the pane-named header reads them; live is only for teamOf.
+          const m = tabMatch({ space: w.name, tab: ctx, programs: mine.map((a) => a.program?.name ?? ""), panes: allPanes, terminals: allTerminals, filter: f });
           return { w, ctx, mine, team: teamOf(mine.map((a) => a.address)), hit: !f || m.hit, named: m.panes };
         })
         .filter((c) => c.hit || c.named.length);
@@ -116,6 +129,7 @@ export default class Picker extends View {
     if (!r) return;
     if (r.kind === "earlier") {
       this.at = this.rows().filter(r => r.kind !== "head").findIndex(r => r.kind === "earlier");
+      this.selKey = null;
       this.showEarlier = !this.showEarlier;
       this.input.focus();
       cx.notify();
@@ -142,8 +156,14 @@ export default class Picker extends View {
     const pickable = rows.filter((r) => r.kind !== "head");
     // Opens on where you are.
     if (this.at === null) this.at = Math.max(0, pickable.findIndex((r) => r.kind === "ctx" && r.w.active && r.ctx.active));
+    // Keep the same row selected when rows above it come or go.
+    if (this.selKey) {
+      const i = pickable.findIndex((r) => rowKey(r) === this.selKey);
+      if (i >= 0) this.at = i;
+    }
     this.at = Math.min(this.at, pickable.length - 1);
     const sel = pickable[this.at];
+    this.selKey = rowKey(sel);
     // One continuous strip: each row (and the group title before it) at a fixed
     // y. Scrolling moves the strip only as far as it takes to keep the selected
     // row in view, so the arrows can't run the selection off the list.
@@ -268,8 +288,8 @@ export default class Picker extends View {
       .on_key_down((e, cx) => {
         const k = e.key;
         if (k === "escape") return this.close();
-        if (k === "down") this.at = (this.at + 1) % pickable.length;
-        else if (k === "up") this.at = (this.at + pickable.length - 1) % pickable.length;
+        if (k === "down") { this.at = (this.at + 1) % pickable.length; this.selKey = null; }
+        else if (k === "up") { this.at = (this.at + pickable.length - 1) % pickable.length; this.selKey = null; }
         else if (k === "d" && e.modifiers.control) {
           if (sel?.kind === "ctx") {
             this.close();
@@ -301,6 +321,7 @@ export default class Picker extends View {
               // The selection follows the wheel, so the next frame doesn't scroll back to it.
               while (this.at < pickable.length - 1 && tops[rows.indexOf(pickable[this.at])] < this.scroll) this.at++;
               while (this.at > 0 && tops[rows.indexOf(pickable[this.at])] + (H[pickable[this.at].kind] ?? 32) > this.scroll + height) this.at--;
+              this.selKey = null;
               cx.notify();
             }))
           .children(rows.map((r, i) => (visible(i) ? place(row(r), i) : null)).filter(Boolean)),

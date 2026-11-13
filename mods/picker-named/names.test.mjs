@@ -2,7 +2,7 @@
 //   node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test names.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { tabMatch, firstPick } from "./names.js";
+import { tabMatch, firstPick, rowKey } from "./names.js";
 
 const pane = (pane, tab, terminal, title, program) => ({ pane, tab, terminal, title, program: { name: program } });
 const PANES = [
@@ -26,7 +26,7 @@ test("no filter shows every named pane of the tab, in order", () => {
   assert.equal(m.hit, true);
   assert.deepEqual(names(m), ["deploy staging", "logs app-01"]);
   assert.deepEqual(m.panes.map((p) => p.hit), [true, true]);
-  assert.deepEqual(m.panes[0], { pane: "p1", terminal: "t1", name: "deploy staging", program: "Claude Code", hit: true });
+  assert.deepEqual(m.panes[0], { pane: "p1", name: "deploy staging", program: "Claude Code", hit: true });
 });
 
 test("pane-only hit leaves tab unmatched", () => {
@@ -90,7 +90,50 @@ test("no hit picks the first row", () => {
 });
 
 test("mod pane titles do not match the tab", () => {
-  const panes = [...PANES, { pane: "p4", tab: "tb1", terminal: null, title: "files", program: { name: "" } }];
+  // A mod pane has no terminal and no program (herdr.d.ts PaneInfo).
+  const panes = [...PANES, { pane: "p4", tab: "tb1", terminal: null, title: "files" }];
   const m = tabMatch({ space: "Shop", tab: { id: "tb1", name: "api" }, programs: [], panes, terminals: TERMINALS, filter: "files" });
   assert.equal(m.hit, false);
+});
+
+test("labels of only spaces count as unnamed, names are trimmed", () => {
+  const terminals = TERMINALS.map((t) =>
+    t.address === "t1" ? { ...t, labels: { "pane.name": "   " } } : t.address === "t3" ? { ...t, labels: { "pane.name": "  logs app-01 " } } : t);
+  assert.deepEqual(names(run("", terminals)), ["logs app-01"]);
+});
+
+test("a pane whose terminal is unknown has no name", () => {
+  assert.deepEqual(names(run("", TERMINALS.filter((t) => t.address !== "t1"))), ["logs app-01"]);
+});
+
+test("machine-qualified addresses match exactly, never a local terminal", () => {
+  const panes = [pane("r1", "tb1", "vps/t7", "zsh", "zsh")];
+  const terminals = [{ address: "t7", labels: { "pane.name": "local seven" } }, { address: "vps/t7", labels: { "pane.name": "remote seven" } }];
+  const m = tabMatch({ space: "Shop", tab: { id: "tb1", name: "api" }, programs: [], panes, terminals, filter: "" });
+  assert.deepEqual(names(m), ["remote seven"]);
+});
+
+test("tab hits on its space name alone", () => {
+  assert.equal(run("shop").hit, true);
+});
+
+test("tab hits on an agent program alone", () => {
+  assert.equal(run("claude").hit, true);
+});
+
+test("a hitting pane after a non-hitting one under a hitting tab is picked", () => {
+  assert.equal(firstPick([ctx("tb1", true), prow("p3", "tb1", false), prow("p1", "tb1", true)]), 2);
+});
+
+test("rows without a hit before the first hit are skipped", () => {
+  assert.equal(firstPick([{ kind: "earlier" }, ctx("tb1", true), { kind: "new" }]), 1);
+});
+
+test("rowKey identifies a row across rebuilds", () => {
+  assert.equal(rowKey(ctx("tb1", true)), "ctx:tb1");
+  assert.equal(rowKey(prow("p1", "tb1", false)), "pane:p1");
+  assert.equal(rowKey({ kind: "space", machine: null }), "space:");
+  assert.equal(rowKey({ kind: "space", machine: "vps" }), "space:vps");
+  assert.equal(rowKey({ kind: "earlier", count: 3 }), "earlier:");
+  assert.equal(rowKey(undefined), null);
 });

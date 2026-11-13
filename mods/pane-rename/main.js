@@ -1,11 +1,11 @@
 // Names a pane: writes the label pane.name on its core terminal (`hc label <t> pane.name=<name>`),
 // read by the pane-named header and the picker-named Go To. Opened by mod.open (cmd-F2: the focused
 // pane) or by the header with props { terminal }. Enter saves, an empty name removes it, Esc cancels.
+// A failed save keeps the dialog open; while a save runs, Esc and Cancel wait for it.
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { props, focused, terminals, hc, notify, closeOverlay, theme } from "herdr";
-
-const LABEL = "pane.name";
+import { LABEL, readLabel, nextLabel } from "./label.js";
 
 export default class PaneRename extends View {
   init(_props, cx) {
@@ -16,7 +16,7 @@ export default class PaneRename extends View {
       this.close();
       return;
     }
-    this.before = terminals().find((t) => t.address === this.target)?.labels?.[LABEL] ?? "";
+    this.before = readLabel(terminals(), this.target);
     this.input = InputState.new({ value: this.before });
     if (this.before) this.input.set_selected_range({ start: 0, end: this.before.length });
     this.input.on("submit", (_e, cx) => this.submit(cx));
@@ -34,21 +34,31 @@ export default class PaneRename extends View {
     if (overlay) closeOverlay(overlay);
   }
 
+  cancel() {
+    // Closing cancels this copy's tasks, so a running save is not interrupted from here.
+    if (!this.busy) this.close();
+  }
+
   submit(cx) {
-    const name = this.input.value().trim();
-    if (name === this.before) return this.close();
     // One write at a time: Enter and Save while hc is still running would label twice.
     if (this.busy) return;
+    const name = nextLabel(this.input.value(), this.before);
+    if (name === null) return this.close();
     this.busy = true;
-    // Close only after the write: closing cancels this copy's tasks.
-    cx.spawn(async () => {
+    cx.spawn(async (cx) => {
+      let error = null;
       try {
         const r = await hc(["label", this.target, `${LABEL}=${name}`]);
-        if (r.code !== 0) notify({ level: "error", title: "Rename failed", body: (r.stderr || r.stdout).trim().split("\n")[0] });
+        if (r.code !== 0) error = (r.stderr || r.stdout).trim().split("\n")[0];
       } catch (e) {
-        notify({ level: "error", title: "Rename failed", body: String(e?.message ?? e) });
+        error = String(e?.message ?? e);
       }
-      this.close();
+      if (!error) return this.close();
+      // Keep the dialog and the typed name so the person can retry or cancel.
+      notify({ level: "error", title: "Rename failed", body: error });
+      this.busy = false;
+      this.input.focus();
+      cx.notify();
     });
   }
 
@@ -60,7 +70,7 @@ export default class PaneRename extends View {
       .text_color(primary ? t.solid_foreground : t.foreground).text_size(12.5).font_medium().cursor_pointer()
       .hover((s) => s.opacity(0.88)).on_click(action).child(text);
     return v_flex().id("pane-rename").track_focus(this.handle)
-      .on_key_down((e, cx) => { if (e.key === "escape") { this.close(); cx.stop_propagation(); } })
+      .on_key_down((e, cx) => { if (e.key === "escape") { this.cancel(); cx.stop_propagation(); } })
       .w_full().min_h(0).p(18).bg(t.popover).text_color(t.foreground)
       .child(h_flex().items_center().child(div().flex_1().text_size(15).font_semibold().child("Rename pane"))
         .child(div().text_size(11).text_color(t.dim).child("Esc")))
@@ -68,7 +78,7 @@ export default class PaneRename extends View {
       .child(Input.new(this.input).h(36).px(10).rounded(9).border_1().border_color(this.inputFocused ? t.accent : t.input).bg(t.background).text_size(12.8).text_color(t.foreground))
       .child(div().pt(6).text_size(11.5).text_color(t.dim).child("Empty name removes it"))
       .child(h_flex().pt(16).gap(8).justify_end()
-        .child(button("pr-cancel", "Cancel", false, () => this.close()))
+        .child(button("pr-cancel", "Cancel", false, () => this.cancel()))
         .child(button("pr-save", "Save", true, (_e, cx) => this.submit(cx))));
   }
 }

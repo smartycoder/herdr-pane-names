@@ -18,8 +18,8 @@ export function tabMatch({ space, tab, programs, panes, terminals, filter }) {
   const named = mine
     .map((p) => ({
       pane: p.pane,
-      terminal: p.terminal,
-      name: (p.terminal && terminals.find((t) => t.address === p.terminal)?.labels?.[LABEL]) || "",
+      // Trimmed: a label of only spaces (set with hc label by hand or an agent) counts as no name.
+      name: p.terminal ? String(terminals.find((t) => t.address === p.terminal)?.labels?.[LABEL] ?? "").trim() : "",
       program: p.program?.name ?? "",
     }))
     .filter((p) => p.name)
@@ -38,4 +38,13 @@ export function firstPick(rows) {
     if (rows[k].hit) return k;
   }
   return i;
+}
+
+// A row's identity across rebuilds (titles and statuses reorder rows while Go To is open),
+// so the selection follows the row, not its index. null for no row.
+export function rowKey(r) {
+  if (!r) return null;
+  if (r.kind === "ctx") return `ctx:${r.ctx.id}`;
+  if (r.kind === "pane") return `pane:${r.pane}`;
+  return `${r.kind}:${r.machine ?? ""}`;
 }
