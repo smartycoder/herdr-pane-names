@@ -1,0 +1,6 @@
+{
+  "global": {
+    "cmd-k": "mod.open:picker-named",
+    "cmd-f2": "mod.open:pane-rename"
+  }
+}

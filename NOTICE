@@ -1,0 +1,7 @@
+herdr-pane-names
+
+mods/pane-named is modified from the `pane` mod and mods/picker-named from the `picker` mod
+shipped with Herdr 0.1.15 (https://herdr.dev), licensed under the Apache License 2.0.
+Changes: show and search pane names stored in the pane.name label of each terminal.
+
+mods/pane-rename and mods/picker-named/names.js are new.
