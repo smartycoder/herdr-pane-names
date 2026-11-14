@@ -2,14 +2,19 @@
 
 Name any terminal pane ("api server", "db migrations") and find it again. The name replaces the program
 name in the pane header ("Claude Code", "zsh"), and Go To lists every named pane under its tab, searchable,
-with Enter jumping straight to that pane, also in another tab or space.
+with Enter jumping straight to that pane, also in another tab or space. A zoomed pane's header turns the
+accent color and says so, with its unzoom button always shown.
 
 ![Pane names](preview.png)
 
 ## What you see
 
 - **Pane header** (`pane-named`): the same 30 px header as Herdr's `pane` mod (program icon, name, folder,
-  agent status, hover buttons), but the name slot shows the pane's name when it has one.
+  agent status, hover buttons), but the name slot shows the pane's name when it has one. A zoomed pane's
+  header has an accent tint (`theme().accent` + `38`), a 2 px accent line on its terminal-facing edge (1 px
+  `border` otherwise), the folder in `foreground` + `c0`, and at the right an 18 px accent badge (radius 5,
+  10.5 px semibold `accent_foreground`, the 11 px `zoom` icon) reading "Zoomed · 2 hidden" (the other panes
+  of its tab; "Zoomed" when it has none), then the `unzoom` button in `foreground`.
 - **Rename dialog** (`pane-rename`): a 420 × 200 px dialog titled "Rename pane", one "Name" field prefilled
   with the current name and selected, the hint "Empty name removes it", Cancel and Save buttons, "Esc" in the
   top right. Same look as Herdr's `prompt` dialog (theme colors `popover`, `accent`, `solid`). It is modal:
@@ -30,6 +35,9 @@ with Enter jumping straight to that pane, also in another tab or space.
   unchanged name just closes, Esc or Cancel closes without writing. While a save runs, Enter, Save, Esc and
   Cancel wait for it. A failed write shows an error toast "Rename failed" and keeps the dialog open with the
   typed name.
+- Zoom (`cmd-shift-enter`, `pane.zoom`): the zoomed pane's header shows the badge and keeps the unzoom
+  button shown without hover; a click on it runs `pane.zoom {pane}` and the header goes back to normal. The
+  hover buttons then leave out the zoom button, so the header never has two. Mod panes zoom and show it too.
 - A mod pane (Files, Changes) has no terminal: `cmd-f2` there shows the warning toast "This pane has no
   terminal" and closes the dialog at once.
 - Go To with an empty filter shows every named pane under its tab; as in Herdr's picker, tabs of quiet spaces
@@ -50,13 +58,14 @@ with Enter jumping straight to that pane, also in another tab or space.
 - `mods/pane-named`: `mod.clone pane`, name slot `label || <Herdr's name>` where the label is the trimmed
   `terminals().find((t) => t.address === pane.terminal)?.labels?.["pane.name"]`; the name `div` has
   `on_mouse_down("left")` with `click_count === 2` → `openOverlay({ mod: "pane-rename", kind: "dialog",
-  width: 420, height: 200, modal: true, props: { terminal } })`.
+  width: 420, height: 200, modal: true, props: { terminal } })`. `zoom.js` (pure): `zoomBadge(panes, pane)`
+  returns the badge text from `panes()`, or null when the pane is not zoomed.
 - `mods/picker-named`: `mod.clone picker` plus `names.js` (pure, no Herdr import): `tabMatch(...)` decides a
   tab's own match and its named pane rows (from all `terminals()`, as the header reads them), `firstPick(rows)`
   the row selected while filtering, `rowKey(row)` the identity the selection follows.
 - Tests (Node 22.7 or newer for module detection; tested on Node 24.15), in each mod folder:
-  `node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test label.test.mjs` (pane-rename) and
-  `... --test names.test.mjs` (picker-named).
+  `node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test label.test.mjs` (pane-rename),
+  `... --test zoom.test.mjs` (pane-named) and `... --test names.test.mjs` (picker-named).
 - Hook-up, outside the mods:
   - `keys.json`: `cmd-p` (Herdr's own Go To key) → `mod.open:picker-named`, `cmd-f2` → `mod.open:pane-rename`.
   - Each layout that should show names in pane headers: in its tab block (`"content": { "tab": "active", ... }`)
@@ -82,10 +91,12 @@ with Enter jumping straight to that pane, also in another tab or space.
 
 ## Done when
 
-1. `herdr-app check` passes for all three mods; both test files are green.
+1. `herdr-app check` passes for all three mods; all three test files are green.
 2. `cmd-f2` on a terminal pane, type "api server", Enter: `hc get <t>` shows `pane.name: api server` and the
    pane header shows it.
 3. From another tab, `cmd-p`, type "api server": the `↳ api server` row is selected; Enter focuses that pane.
 4. Double-click the name in the header, clear it, Save: `hc get <t>` has no `pane.name` and the header shows
    the program name again.
 5. `cmd-f2` on a Files pane: warning toast, the dialog closes at once.
+6. In a tab with 3 panes, `cmd-shift-enter`: the header turns the accent color and reads "Zoomed · 2 hidden";
+   a click on its unzoom button brings back all 3 panes and the plain header.

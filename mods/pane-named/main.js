@@ -4,11 +4,13 @@
 // Shows the program's icon (the app's program table), the pane's name (the pane.name label
 // on its terminal, set by the pane-rename mod) or else the agent's name or the terminal's
 // title, the folder, and the agent's status; buttons split, zoom and close this pane.
+// A zoomed pane's header is tinted with the accent, says "Zoomed · N hidden" and keeps its unzoom button shown.
 // Props from the app: { pane, terminal }. Click: focus the pane. Double-click the name: rename.
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { panes, props, run, theme, home, layout, terminals, openOverlay } from "herdr";
+import { zoomBadge } from "./zoom.js";
 
 // Match the first visible tab frame, including the active child of a stack.
 function paneFrame(node) {
@@ -44,12 +46,12 @@ export default class Pane extends View {
     return panes().find((p) => p.pane === props()?.pane);
   }
 
-  button(t, id, icon, command, args) {
+  button(t, id, icon, command, args, color = t.dim) {
     return div()
       .id(id)
       .p(3)
       .rounded(4)
-      .text_color(t.dim)
+      .text_color(color)
       .hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click((_e, cx) => {
         cx.stop_propagation();
@@ -69,16 +71,19 @@ export default class Pane extends View {
     const st = p.status;
     const pane = p.pane;
     const bottom = paneFrame(layout())?.header?.position === "bottom";
+    // Zoomed: accent tint, a 2 px accent line on the terminal-facing edge, the badge and a shown unzoom button.
+    const badge = zoomBadge(panes(), pane);
+    const edge = badge ? 2 : 1;
     return h_flex()
       .id(`pane-head-${pane}`)
       .size_full()
       .px(10)
       .gap(8)
       .items_center()
-      .bg(t.background)
-      .when(bottom, el => el.border_t(1))
-      .when(!bottom, el => el.border_b(1))
-      .border_color(t.border)
+      .bg(badge ? t.accent + "38" : t.background)
+      .when(bottom, el => el.border_t(edge))
+      .when(!bottom, el => el.border_b(edge))
+      .border_color(badge ? t.accent : t.border)
       .text_size(12)
       .on_hover((hovered, cx) => { this.hovered = hovered; cx.notify(); })
       .on_click(() => run("pane.focus", { pane }))
@@ -90,14 +95,21 @@ export default class Pane extends View {
           openOverlay({ mod: "pane-rename", kind: "dialog", width: 420, height: 200, modal: true, props: { terminal: p.terminal } });
         })
         .child(name))
-      .child(div().flex_1().truncate().text_color(t.dim).child(folder(p.cwd)))
+      .child(div().flex_1().truncate().text_color(badge ? t.foreground + "c0" : t.dim).child(folder(p.cwd)))
       .when(st === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
       .when(st === "blocked", el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).child("Needs you")))
       .when(st === "done", el => el.child(div().size(7).flex_none().rounded(4).bg(t.done)))
+      .when(Boolean(badge), el => el
+        .child(div().flex_none().px(6).h(18).flex().items_center().gap(4).rounded(5).bg(t.accent)
+          .text_size(10.5).font_semibold().text_color(t.accent_foreground)
+          .child(svg("mods/pane-named/zoom.svg").size(11).flex_none().text_color(t.accent_foreground))
+          .child(badge))
+        .child(this.button(t, `ph-uz-${pane}`, "unzoom", "pane.zoom", { pane }, t.foreground)))
       .when(this.hovered, el => el
         .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
         .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
-        .child(this.button(t, `ph-z-${pane}`, p.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
+        // A zoomed pane already shows its unzoom button next to the badge.
+        .when(!badge, el => el.child(this.button(t, `ph-z-${pane}`, "zoom", "pane.zoom", { pane })))
         .child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane })));
   }
 }

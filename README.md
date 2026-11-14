@@ -1,7 +1,7 @@
 # herdr-pane-names
 
 Pane names for the [Herdr](https://herdr.dev) desktop app: name a terminal pane, see the name in its header,
-and find it in Go To.
+and find it in Go To. A zoomed pane's header turns the accent color, so you see the zoom at a glance.
 
 ![Pane names](preview.png)
 
