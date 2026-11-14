@@ -5,12 +5,17 @@
 // on its terminal, set by the pane-rename mod) or else the agent's name or the terminal's
 // title, the folder, and the agent's status; buttons split, zoom and close this pane.
 // A zoomed pane's header is tinted with the accent, says "Zoomed · N hidden" and keeps its unzoom button shown.
+// A Claude Code pane keeps its name and the session's name the same (sync.js): a new pane name is typed
+// into Claude as /rename, and a name given in Claude (/rename) becomes the pane name.
 // Props from the app: { pane, terminal }. Click: focus the pane. Double-click the name: rename.
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { panes, props, run, theme, home, layout, terminals, openOverlay } from "herdr";
+import { panes, props, run, theme, home, layout, terminals, openOverlay, hc, readTextFile, notify } from "herdr";
 import { zoomBadge } from "./zoom.js";
+import { userName, renameText, pullLabel } from "./sync.js";
+
+const LABEL = "pane.name";
 
 // Match the first visible tab frame, including the active child of a stack.
 function paneFrame(node) {
@@ -39,11 +44,86 @@ function folder(cwd) {
   return cwd === h ? "~" : cwd.startsWith(h + "/") ? "~" + cwd.slice(h.length) : cwd;
 }
 
+/** A terminal's pane name, trimmed: a label of only spaces (set by hand or by an agent) counts as none. */
+function labelOf(address) {
+  return String(terminals().find((x) => x.address === address)?.labels?.[LABEL] ?? "").trim();
+}
+
+/** The Claude Code session in a terminal on this computer: { name } (null when the person never named it),
+ *  or null when none runs there. Its foreground process is Claude, registered as ~/.claude/sessions/<pid>.json. */
+async function sessionOf(address) {
+  let info = null;
+  try { info = JSON.parse((await hc(["get", address, "--json"]))?.stdout ?? ""); } catch { return null; }
+  const pid = info?.foreground?.pid;
+  if (!Number.isInteger(pid)) return null;
+  let text = null;
+  try { text = await readTextFile(`${home()}/.claude/sessions/${pid}.json`); } catch { return null; }
+  return text == null ? null : { name: userName(text) };
+}
+
 export default class Pane extends View {
-  init() { this.hovered = false; }
+  init(given, cx) {
+    this.hovered = false;
+    // Read once: props() in a later callback can answer for another copy.
+    this.paneId = given?.pane ?? props()?.pane;
+    this.seen = null;
+    this.syncing = false;
+    cx.timer.every(1000, (cx) => this.tick(cx));
+  }
 
   me() {
     return panes().find((p) => p.pane === props()?.pane);
+  }
+
+  /** What the name sync compares for this pane, or null when it does not apply (not Claude Code, or on
+   *  another machine: its session registry is there). */
+  watched() {
+    const p = panes().find((x) => x.pane === this.paneId);
+    if (!p?.terminal || p.terminal.includes("/")) return null;
+    if (p.app !== "claude-code" && terminals().find((x) => x.address === p.terminal)?.agent !== "claude-code") return null;
+    return { terminal: p.terminal, label: labelOf(p.terminal), title: String(p.title ?? "") };
+  }
+
+  // Syncs on a change only, never on first sight: a pane and a session that already differ stay as they are
+  // until one of them is renamed. A new pane name is pushed; a new terminal title (Claude sets it to the
+  // session's name on /rename) pulls the session's name. One sync at a time; changes meanwhile wait.
+  tick(cx) {
+    if (this.syncing) return;
+    const now = this.watched();
+    const was = this.seen;
+    this.seen = now;
+    if (!now || !was || was.terminal !== now.terminal) return;
+    const kind = now.label !== was.label ? "push" : now.title !== was.title ? "pull" : null;
+    if (!kind) return;
+    this.syncing = true;
+    cx.spawn(async (cx) => {
+      try { await this.sync(kind, now.terminal, cx); } catch {}
+      this.syncing = false;
+    });
+  }
+
+  async sync(kind, terminal, cx) {
+    const session = await sessionOf(terminal);
+    if (!session) return;
+    const label = labelOf(terminal);
+    if (kind === "pull") {
+      const next = pullLabel(label, session.name);
+      if (next) await hc(["label", terminal, `${LABEL}=${next}`]);
+      return;
+    }
+    const text = renameText(label, session.name);
+    if (!text) return;
+    // hc send waits while the person has an unfinished prompt in Claude, then types /rename (an immediate
+    // command: it runs even while Claude works). Run from the app, not from a terminal, so it is not wrapped
+    // as a message from another terminal.
+    const send = hc(["send", terminal, text]);
+    if (await Promise.race([send.then(() => false), cx.sleep(3000).then(() => true)])) {
+      notify({ level: "info", title: "Claude session renames after your prompt", body: "Send or clear what you typed in Claude." });
+    }
+    const r = await send;
+    if (r.code !== 0) {
+      notify({ level: "warning", title: "Claude session not renamed", body: (r.stderr || r.stdout).trim().split("\n")[0] });
+    }
   }
 
   button(t, id, icon, command, args, color = t.dim) {
@@ -64,8 +144,7 @@ export default class Pane extends View {
     const t = theme();
     const p = this.me();
     if (!p) return div();
-    // Trimmed: a label of only spaces (set with hc label by hand or an agent) counts as no name.
-    const label = p.terminal && String(terminals().find((x) => x.address === p.terminal)?.labels?.["pane.name"] ?? "").trim();
+    const label = p.terminal ? labelOf(p.terminal) : "";
     const name = label || ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
     const pic = icon(p.program, 14, t.dim);
     const st = p.status;

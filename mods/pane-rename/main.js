@@ -4,7 +4,7 @@
 // A failed save keeps the dialog open; while a save runs, Esc and Cancel wait for it.
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { props, focused, terminals, hc, notify, closeOverlay, theme } from "herdr";
+import { props, focused, terminals, hc, notify, closeOverlay, theme, layout } from "herdr";
 import { LABEL, readLabel, nextLabel } from "./label.js";
 
 export default class PaneRename extends View {
@@ -17,6 +17,10 @@ export default class PaneRename extends View {
       return;
     }
     this.before = readLabel(terminals(), this.target);
+    // The pane-named header renames the Claude session too (its sync), so say so only where it shows.
+    this.claude = !this.target.includes("/")
+      && terminals().find((x) => x.address === this.target)?.agent === "claude-code"
+      && JSON.stringify(layout() ?? {}).includes('"mod":"pane-named"');
     this.input = InputState.new({ value: this.before });
     if (this.before) this.input.set_selected_range({ start: 0, end: this.before.length });
     this.input.on("submit", (_e, cx) => this.submit(cx));
@@ -76,7 +80,7 @@ export default class PaneRename extends View {
         .child(div().text_size(11).text_color(t.dim).child("Esc")))
       .child(div().pt(16).pb(7).text_size(11.5).text_color(t.dim).child("Name"))
       .child(Input.new(this.input).h(36).px(10).rounded(9).border_1().border_color(this.inputFocused ? t.accent : t.input).bg(t.background).text_size(12.8).text_color(t.foreground))
-      .child(div().pt(6).text_size(11.5).text_color(t.dim).child("Empty name removes it"))
+      .child(div().pt(6).text_size(11.5).text_color(t.dim).child(this.claude ? "Renames the Claude session too · empty removes the name" : "Empty name removes it"))
       .child(h_flex().pt(16).gap(8).justify_end()
         .child(button("pr-cancel", "Cancel", false, () => this.cancel()))
         .child(button("pr-save", "Save", true, (_e, cx) => this.submit(cx))));

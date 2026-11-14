@@ -3,7 +3,8 @@
 Name any terminal pane ("api server", "db migrations") and find it again. The name replaces the program
 name in the pane header ("Claude Code", "zsh"), and Go To lists every named pane under its tab, searchable,
 with Enter jumping straight to that pane, also in another tab or space. A zoomed pane's header turns the
-accent color and says so, with its unzoom button always shown.
+accent color and says so, with its unzoom button always shown. In a Claude Code pane, the pane name and the
+session's name (Claude's `/rename`) stay the same.
 
 ![Pane names](preview.png)
 
@@ -38,6 +39,17 @@ accent color and says so, with its unzoom button always shown.
 - Zoom (`cmd-shift-enter`, `pane.zoom`): the zoomed pane's header shows the badge and keeps the unzoom
   button shown without hover; a click on it runs `pane.zoom {pane}` and the header goes back to normal. The
   hover buttons then leave out the zoom button, so the header never has two. Mod panes zoom and show it too.
+- Claude Code panes on this computer (`app` or `agent` is `claude-code`) keep the two names the same, on a
+  change only: a pane and a session that already differ stay as they are until one is renamed.
+  - A new pane name (dialog, double-click, `hc label`) is typed into Claude as `/rename <name>` with
+    `hc send`, unless the session already has that name. `hc send` waits while the person has an
+    unfinished prompt in Claude; after 3 s the info toast "Claude session renames after your prompt" says
+    so, and the rename runs once the prompt is sent or cleared. A failed send shows the warning toast
+    "Claude session not renamed". Removing the pane name leaves the session's name alone.
+  - A name given in Claude (`/rename`, `--name`) becomes the pane name within about a second; names Claude
+    makes up itself (`derived`, `auto`) never do.
+  - The rename dialog's hint reads "Renames the Claude session too · empty removes the name" for such a
+    pane when the shown layout uses `pane-named`.
 - A mod pane (Files, Changes) has no terminal: `cmd-f2` there shows the warning toast "This pane has no
   terminal" and closes the dialog at once.
 - Go To with an empty filter shows every named pane under its tab; as in Herdr's picker, tabs of quiet spaces
@@ -59,13 +71,19 @@ accent color and says so, with its unzoom button always shown.
   `terminals().find((t) => t.address === pane.terminal)?.labels?.["pane.name"]`; the name `div` has
   `on_mouse_down("left")` with `click_count === 2` → `openOverlay({ mod: "pane-rename", kind: "dialog",
   width: 420, height: 200, modal: true, props: { terminal } })`. `zoom.js` (pure): `zoomBadge(panes, pane)`
-  returns the badge text from `panes()`, or null when the pane is not zoomed.
+  returns the badge text from `panes()`, or null when the pane is not zoomed. `sync.js` (pure):
+  `userName(registryText)` (the name only when `nameSource` is `"user"`), `renameText(label, sessionName)`
+  (`/rename <name>` or null), `pullLabel(label, sessionName)` (the new pane name or null). `init` starts
+  `cx.timer.every(1000)`, which compares the pane's label and terminal title with the last tick and, on a
+  change, finds the session: `hc get <t> --json` → `foreground.pid` → `~/.claude/sessions/<pid>.json`. A
+  changed label pushes (`hc send`), a changed title pulls (`hc label`); one sync at a time.
 - `mods/picker-named`: `mod.clone picker` plus `names.js` (pure, no Herdr import): `tabMatch(...)` decides a
   tab's own match and its named pane rows (from all `terminals()`, as the header reads them), `firstPick(rows)`
   the row selected while filtering, `rowKey(row)` the identity the selection follows.
 - Tests (Node 22.7 or newer for module detection; tested on Node 24.15), in each mod folder:
   `node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test label.test.mjs` (pane-rename),
-  `... --test zoom.test.mjs` (pane-named) and `... --test names.test.mjs` (picker-named).
+  `... --test zoom.test.mjs` and `... --test sync.test.mjs` (pane-named), and `... --test names.test.mjs`
+  (picker-named).
 - Hook-up, outside the mods:
   - `keys.json`: `cmd-p` (Herdr's own Go To key) → `mod.open:picker-named`, `cmd-f2` → `mod.open:pane-rename`.
   - Each layout that should show names in pane headers: in its tab block (`"content": { "tab": "active", ... }`)
@@ -88,10 +106,18 @@ accent color and says so, with its unzoom button always shown.
   instead. `cmd-f2` is unbound in Herdr.
 - The label key is `pane.name`; never write `herdr.*` labels.
 - Names on remote machines' terminals are untested: `hc label` gets the `machine/t7` address as Herdr gives it.
+  Their Claude sessions are not synced: the session registry is on that machine.
+- `hc send` run inside a terminal wraps the text as a message from that terminal (`<hc from="t46">…</hc>`), so
+  Claude gets `/rename` as a prompt for the model, not as a command. Run it from the mod (the app's `hc`),
+  never from a script in a terminal.
+- `hc send` waits only for a prompt the person typed in Herdr. Keys a program pressed (`hc keys`) don't count:
+  then the text is pasted after them and sent as one message.
+- The sync runs only in panes on screen: a pane in a background tab catches up on its next change after it
+  shows. Only `~/.claude` is read, not another `CLAUDE_CONFIG_DIR`.
 
 ## Done when
 
-1. `herdr-app check` passes for all three mods; all three test files are green.
+1. `herdr-app check` passes for all three mods; all four test files are green.
 2. `cmd-f2` on a terminal pane, type "api server", Enter: `hc get <t>` shows `pane.name: api server` and the
    pane header shows it.
 3. From another tab, `cmd-p`, type "api server": the `↳ api server` row is selected; Enter focuses that pane.
@@ -100,3 +126,7 @@ accent color and says so, with its unzoom button always shown.
 5. `cmd-f2` on a Files pane: warning toast, the dialog closes at once.
 6. In a tab with 3 panes, `cmd-shift-enter`: the header turns the accent color and reads "Zoomed · 2 hidden";
    a click on its unzoom button brings back all 3 panes and the plain header.
+7. In a Claude Code pane with an empty prompt, `cmd-f2`, type "api server", Enter: Claude shows "Session
+   renamed to: api server" and `~/.claude/sessions/<pid>.json` has `"name": "api server", "nameSource": "user"`.
+8. In that Claude, `/rename db work`: within about a second the header shows "db work" and `hc get <t>` shows
+   `pane.name: db work`.

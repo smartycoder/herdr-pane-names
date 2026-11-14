@@ -24,6 +24,14 @@ Ask the agent in your Herdr window to add `herdr.dev/mods/smartycoder/herdr-pane
 
 Without step 3, names still show in Go To.
 
+## Claude Code sessions
+
+In a Claude Code pane the pane name and the session name stay the same: naming the pane renames the session
+(`/rename`), and `/rename` in Claude renames the pane. For that, `pane-named` reads Claude Code's session
+registry `~/.claude/sessions/<pid>.json` (never the conversation), and runs `hc get <t> --json`,
+`hc send <t> "/rename <name>"` and `hc label`. If you have an unfinished prompt in Claude, the rename waits
+until you send or clear it. Nothing leaves your computer.
+
 How it works and how to rebuild it: [RECIPE.md](RECIPE.md).
 
 ## License
